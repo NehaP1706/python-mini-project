@@ -179,6 +179,12 @@ function getTypingSpeedTesterHTML() {
             .typing-tester .sentence-card .current { background: rgba(34,197,94,0.12); box-shadow: 0 0 8px rgba(34,197,94,0.12); border-radius:4px; }
             .typing-tester .sentence-card .pending { color: color-mix(in srgb, var(--text-secondary) 60%, transparent); }
 
+            /* Space character shown as a faint middle-dot; brightens on correct/incorrect */
+            .typing-tester .sentence-card .space-char { opacity: 0.35; font-size: 0.7em; vertical-align: middle; }
+            .typing-tester .sentence-card .space-char.correct { color: #22c55e; opacity: 0.6; }
+            .typing-tester .sentence-card .space-char.incorrect { color: #ef4444; opacity: 1; }
+            .typing-tester .sentence-card .space-char.current { opacity: 1; }
+
             .typing-tester .typing-input {
                 width: 100%;
                 min-height: 140px;
@@ -615,7 +621,18 @@ function initTypingSpeedTester() {
   function renderSentence(sentence) {
     sentenceElement.innerHTML = sentence
       .split("")
-      .map((char) => `<span class="pending">${char}</span>`)
+      .map((char) => {
+        // Render spaces as a visible middle-dot so users know spaces are required
+        if (char === " ") {
+          return `<span class="pending space-char" data-char=" ">·</span>`;
+        }
+        // Escape HTML special characters to avoid injection
+        const escaped = char
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return `<span class="pending" data-char="${escaped}">${escaped}</span>`;
+      })
       .join("");
   }
 
@@ -644,7 +661,7 @@ function initTypingSpeedTester() {
     const finalCorrect = totalCorrectChars + currentStats.correct;
     const finalIncorrect = totalIncorrectChars + currentStats.incorrect;
     const finalChars = totalTypedChars + currentStats.chars;
-    const finalWords = totalWordsTyped + currentStats.words;
+    const finalWords = totalWordsTyped + currentStats.words; // already in 5-char units
     const finalWpm =
       elapsedSeconds > 0 ? Math.round((finalWords / elapsedSeconds) * 60) : 0;
     const finalAccuracy = finalChars
@@ -811,9 +828,18 @@ function initTypingSpeedTester() {
       }
     }
     const chars = cappedText.length;
-    const words = cappedText.trim() ? cappedText.trim().split(/\s+/).length : 0;
+    // Standard WPM convention: 1 word = 5 characters (includes spaces/punctuation).
+    // This avoids undercounting when the user hasn't yet typed a space after the last word.
+    const words = chars / 5;
     return { correct, incorrect, chars, words };
   }
+
+  inputElement.addEventListener("keydown", (e) => {
+    // Prevent Enter from adding newlines — it serves no purpose in a typing test
+    if (e.key === "Enter") {
+      e.preventDefault();
+    }
+  });
 
   inputElement.addEventListener("input", () => {
     const typedText = inputElement.value;
@@ -825,13 +851,12 @@ function initTypingSpeedTester() {
 
     const spans = sentenceElement.querySelectorAll("span");
     const currentStats = calculateMetrics(typedText, currentSentence);
-    let correctChars = 0;
-    let incorrectChars = 0;
 
     spans.forEach((span, index) => {
       span.classList.remove("correct", "incorrect", "current", "pending");
 
-      const expected = currentSentence[index];
+      // Use data-char so space spans (" ") are compared correctly
+      const expected = span.dataset.char ?? currentSentence[index];
       const typed = typedText[index];
 
       if (index === typedText.length) {
@@ -846,10 +871,8 @@ function initTypingSpeedTester() {
 
       if (typed === expected) {
         span.classList.add("correct");
-        correctChars += 1;
       } else {
         span.classList.add("incorrect");
-        incorrectChars += 1;
       }
     });
 
